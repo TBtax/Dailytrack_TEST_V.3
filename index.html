@@ -3324,8 +3324,31 @@ button[onclick="saveDraft()"] { border-color: var(--border) !important; color: v
                 if (!res.ok) throw new Error(`Server error: ${res.status}`);
                 const d = await res.json();
                 SERVER_HISTORY_DB = window._recentlyDeletedIds && window._recentlyDeletedIds.size > 0
-                    ? d.filter(x => !window._recentlyDeletedIds.has(x.id))
+                    ? d.filter(x => !window._recentlyDeletedIds.has(x.id) && !window._recentlyDeletedIds.has(String(x.id)))
                     : d;
+
+                // ถ้า server ยังไม่มี optimistic record ที่เพิ่งบันทึก ให้ merge กลับเพื่อป้องกันหายไป
+                if (window._pendingOptimisticRecord) {
+                    const opt = window._pendingOptimisticRecord;
+                    const serverId = window._pendingOptimisticId;
+                    // เช็คทั้ง ID และ date+employee เพื่อป้องกัน type mismatch ของ ID
+                    const inServer = SERVER_HISTORY_DB.some(x =>
+                        String(x.id) === String(serverId) ||
+                        (typeof isSameDate === 'function'
+                            ? isSameDate(x.date, opt.date)
+                            : x.date === opt.date) &&
+                        x.employee === opt.employee
+                    );
+                    if (!inServer) {
+                        // server ยังไม่มี ใส่ optimistic กลับชั่วคราว
+                        SERVER_HISTORY_DB = SERVER_HISTORY_DB.filter(x => String(x.id) !== String(serverId));
+                        SERVER_HISTORY_DB.push(opt);
+                    } else {
+                        // server มีแล้ว (ไม่ว่า ID จะตรงหรือไม่) ล้าง pending ทิ้ง
+                        window._pendingOptimisticRecord = null;
+                        window._pendingOptimisticId = null;
+                    }
+                }
 
                 // Re-render ทุก view ที่กำลังเปิดอยู่
                 const adminView    = document.getElementById('admin-view');
@@ -4350,6 +4373,29 @@ button[onclick="saveDraft()"] { border-color: var(--border) !important; color: v
             const body = document.getElementById('editLogModal-body');
             body.innerHTML = '';
 
+            // ── DATE EDIT CARD ──────────────────────────────────────
+            const dateCard = document.createElement('div');
+            dateCard.style.cssText = 'background:white;border-radius:20px;border:1.5px solid #BBF7D0;padding:16px;box-shadow:0 2px 8px rgba(77,168,102,0.08);';
+            const dsParts = ds.split('/');
+            const dsForInput = dsParts.length === 3
+                ? `${dsParts[2]}-${String(dsParts[1]).padStart(2,'0')}-${String(dsParts[0]).padStart(2,'0')}`
+                : '';
+            dateCard.innerHTML = `
+                <div style="display:flex;align-items:center;gap:8px;margin-bottom:10px;">
+                    <span style="font-size:1rem;">📅</span>
+                    <label style="font-size:0.82rem;font-weight:700;color:#166534;">วันที่บันทึก</label>
+                    <span style="font-size:0.75rem;color:#6B7280;margin-left:4px;">(แก้ไขได้)</span>
+                </div>
+                <input type="date" id="em_record_date" value="${dsForInput}"
+                    style="width:100%;padding:10px 16px;border:1.5px solid #BBF7D0;border-radius:12px;font-size:0.92rem;font-family:inherit;color:#166534;background:#F0FDF4;cursor:pointer;font-weight:600;"
+                    oninput="
+                        const v=this.value;
+                        if(v){const p=v.split('-');
+                        const label=parseInt(p[2])+'/'+parseInt(p[1])+'/'+p[0];
+                        document.getElementById('editLogModal-date').textContent='วันที่ '+label;}
+                    ">`;
+            body.appendChild(dateCard);
+
             const opts = (list) => list.map(i => {
                 const txt = (typeof i==='object'&&i!==null)?(i.text||i.label||i.value||i.name||''):i;
                 const val = (typeof i==='object'&&i!==null&&i.value!==undefined)?i.value:txt;
@@ -4566,10 +4612,20 @@ button[onclick="saveDraft()"] { border-color: var(--border) !important; color: v
             if (!_editModalLogObj || !_editModalDs) return;
 
             // capture ก่อน close (closeEditLogModal จะล้างตัวแปรเหล่านี้)
-            const editId  = _editModalLogObj.id;
-            const editDs  = _editModalDs;
-            const origLog = _editModalLogObj;
+            const editId     = _editModalLogObj.id;
+            const origLog    = _editModalLogObj;
             const isSavingDraft = _editModalIsDraft;
+            const originalDs = _editModalDs; // วันที่เดิม ก่อนที่ user จะแก้ไข
+
+            // อ่านวันที่ที่อาจแก้ไขจาก input
+            let editDs = _editModalDs;
+            const recordDateInput = document.getElementById('em_record_date');
+            if (recordDateInput && recordDateInput.value) {
+                const p = recordDateInput.value.split('-'); // YYYY-MM-DD
+                if (p.length === 3) {
+                    editDs = `${parseInt(p[2])}/${parseInt(p[1])}/${p[0]}`;
+                }
+            }
 
             // Collect tasks — ถ้า _editModalTaskIndex ไม่เป็น null ให้อัปเดตเฉพาะ task นั้น
             let tasks = [];
@@ -4641,8 +4697,15 @@ button[onclick="saveDraft()"] { border-color: var(--border) !important; color: v
 
             // ── กรณีแก้ไขแบบร่าง: บันทึกกลับ localStorage ──────────
             if (isSavingDraft) {
-                saveDraftForDate(d.date, d);
+                // ถ้าวันที่เปลี่ยน ให้ลบ draft เก่าออกก่อน แล้วบันทึกใหม่ที่วันใหม่
+                if (originalDs && originalDs !== editDs) {
+                    deleteDraftForDate(originalDs);
+                }
+                saveDraftForDate(editDs, d);
                 renderCalendar();
+                // render วันเดิมก่อน (เคลียร์ให้ว่าง) แล้วค่อย render วันใหม่
+                if (originalDs && originalDs !== editDs) renderDayLogs(originalDs);
+                _historySelectedDay = editDs;
                 renderDayLogs(editDs);
                 showMessage('✅ บันทึกแบบร่างเรียบร้อยแล้ว', 'success');
                 return;
@@ -4658,6 +4721,12 @@ button[onclick="saveDraft()"] { border-color: var(--border) !important; color: v
                 const result = await res.json();
                 if (result.result !== 'success') throw new Error('Server Error');
 
+                // ลงทะเบียน editId ใน _recentlyDeletedIds เพื่อให้ fetchHistoryFromServer กรองออกเสมอ
+                // เพิ่มทั้ง raw value และ String เพื่อป้องกัน type mismatch (number vs string)
+                if (!window._recentlyDeletedIds) window._recentlyDeletedIds = new Set();
+                window._recentlyDeletedIds.add(editId);
+                window._recentlyDeletedIds.add(String(editId));
+
                 // Update updatedAt
                 try { const uaMap=JSON.parse(localStorage.getItem(UPDATED_AT_MAP_KEY)||'{}'); uaMap[LOGGED_IN_USER+'|'+editDs]=new Date().toISOString(); localStorage.setItem(UPDATED_AT_MAP_KEY, JSON.stringify(uaMap)); } catch(e2){}
 
@@ -4665,11 +4734,23 @@ button[onclick="saveDraft()"] { border-color: var(--border) !important; color: v
                 const optimistic = Object.assign({}, d, {id:(result.id||'local_'+Date.now())});
                 SERVER_HISTORY_DB = SERVER_HISTORY_DB.filter(x => String(x.id) !== String(editId));
                 SERVER_HISTORY_DB.push(optimistic);
+
+                // เก็บ optimistic record ไว้ merge กลับหาก server ยังไม่มีตอน re-fetch
+                window._pendingOptimisticRecord = optimistic;
+                window._pendingOptimisticId = optimistic.id;
+
+                // อัปเดต selected day ให้ตรงกับวันที่ (อาจถูกเปลี่ยน) เพื่อให้ re-render ถูก
+                const oldDsSubmitted = originalDs;
+                _historySelectedDay = editDs;
+
                 if(IS_ADMIN){renderAdminCalendar();renderAdminMonthlyLogs();}else{renderCalendar();}
+                // ถ้าวันที่เปลี่ยน ให้ render วันเดิมก่อน (เคลียร์ record ที่ย้ายออกไป)
+                if (oldDsSubmitted && oldDsSubmitted !== editDs) renderDayLogs(oldDsSubmitted);
                 renderDayLogs(editDs);
                 toggleLoading(false);
                 showMessage('✅ แก้ไขข้อมูลเรียบร้อยแล้ว', 'success');
-                fetchHistoryFromServer(true);
+                // หน่วง server fetch เล็กน้อยให้ server บันทึกเสร็จก่อน
+                setTimeout(() => fetchHistoryFromServer(true), 2500);
             } catch(e) {
                 toggleLoading(false);
                 showMessage('เกิดข้อผิดพลาด: ' + e.message, 'error');
