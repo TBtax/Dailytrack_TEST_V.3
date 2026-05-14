@@ -1833,21 +1833,6 @@ button[onclick="saveDraft()"] { border-color: var(--border) !important; color: v
 
             <!-- HISTORY MODAL -->
             <!-- Topic Dates Modal -->
-            <div id="topicDatesModal" class="fixed inset-0 z-[110] hidden flex items-center justify-center p-4">
-                <div class="absolute inset-0 bg-gray-900/30 backdrop-blur-sm" onclick="hideModal('topicDatesModal')"></div>
-                <div class="bg-white relative z-10 w-full max-w-md rounded-3xl shadow-2xl overflow-hidden" style="max-height:80vh;display:flex;flex-direction:column;">
-                    <div id="topicDatesModal-header" style="background:linear-gradient(135deg,#2EAF72,#3AACCF);padding:20px 24px 16px;flex-shrink:0;position:relative;">
-                        <button onclick="hideModal('topicDatesModal')" style="position:absolute;right:14px;top:14px;width:34px;height:34px;border-radius:50%;background:rgba(255,255,255,0.2);color:white;border:none;cursor:pointer;display:flex;align-items:center;justify-content:center;transition:all 0.2s;" onmouseover="this.style.background='rgba(255,255,255,0.35)'" onmouseout="this.style.background='rgba(255,255,255,0.2)'">
-                            <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M6 18L18 6M6 6l12 12"/></svg>
-                        </button>
-                        <div style="font-size:0.7rem;color:rgba(255,255,255,0.75);font-weight:600;letter-spacing:0.08em;text-transform:uppercase;margin-bottom:4px;">หัวข้องาน</div>
-                        <div id="topicDatesModal-title" style="font-size:1.05rem;font-weight:800;color:white;line-height:1.3;padding-right:36px;"></div>
-                        <div id="topicDatesModal-count" style="font-size:0.78rem;color:rgba(255,255,255,0.8);margin-top:4px;"></div>
-                    </div>
-                    <div id="topicDatesModal-body" class="custom-scroll" style="overflow-y:auto;padding:16px 20px;flex:1;"></div>
-                </div>
-            </div>
-
             <div id="historyModal" class="fixed inset-0 z-[102] hidden flex items-center justify-center p-4">
                 <div class="absolute inset-0 bg-gray-900/20 backdrop-blur-sm"></div>
                 <div class="bg-white w-[96%] max-w-[1920px] h-[92vh] flex relative z-10 overflow-hidden modal-content">
@@ -5326,120 +5311,253 @@ container.innerHTML = `<div class="grid grid-cols-1 md:grid-cols-4 gap-4 mb-6">
 </div>
 
 ${(() => {
-    // นับจำนวนครั้งและเก็บวันที่ของแต่ละหัวข้อ
-    const topicCount = {};
-    const topicDatesMap = {};
+    // ── GANTT CHART ────────────────────────────────────────────────────────
+    // สถานะ → สี  (ปรับตามสถานะจริงในระบบ)
+    const GANTT_STATUS_COLORS = {
+        'สำเร็จ':              '#4DA866',
+        'เสร็จสิ้น':           '#4DA866',
+        'เสร็จแล้ว':           '#4DA866',
+        'ระหว่างดำเนินการ':    '#F59E0B',
+        'กำลังดำเนินการ':      '#F59E0B',
+        'ดำเนินการ':           '#F59E0B',
+        'อยู่ระหว่างแก้ไข':   '#C084FC',
+        'กำลังแก้ไข':          '#C084FC',
+        'แก้ไข':               '#C084FC',
+        'ส่งต่อผู้เชี่ยวชาญ': '#51B0DE',
+        'ส่งต่อ':              '#51B0DE',
+    };
+    // Priority: อยู่ระหว่างแก้ไข(4) > ส่งต่อ(3) > ดำเนินการ(2) > สำเร็จ(1)
+    const GANTT_COLOR_PRIORITY = { '#C084FC':4, '#51B0DE':3, '#F59E0B':2, '#4DA866':1 };
+
+    function _ganttStatusColor(status) {
+        if (!status) return null;
+        const s = status.trim();
+        if (GANTT_STATUS_COLORS[s]) return GANTT_STATUS_COLORS[s];
+        if (s.includes('สำเร็จ') || s.includes('เสร็จ')) return '#4DA866';
+        if (s.includes('แก้ไข'))                          return '#C084FC';
+        if (s.includes('ผู้เชี่ยวชาญ') || s.includes('ส่งต่อ')) return '#51B0DE';
+        if (s.includes('ดำเนินการ'))                      return '#F59E0B';
+        return null;
+    }
+
+    // สร้าง map: topic → { dayNum → { dateStr, color, statusLabel, tasks[] } }
+    const topicDayDataMap = {};
+    // วันลา / อบรม / ลงพื้นที่ per dayNum
+    const leaveDaySet      = new Set(); // สีฟ้าพาสเทล
+    const fieldTrainDaySet = new Set(); // สีม่วงพาสเทล
+
     logs.forEach(log => {
+        if (!log.date) return;
+        const parts = log.date.split('/');
+        if (parts.length !== 3) return;
+        let logY = parseInt(parts[2]);
+        if (logY > 2400) logY -= 543;
+        if (parseInt(parts[1]) !== m + 1 || logY !== y) return;
+        const dayNum = parseInt(parts[0]);
+        if (isNaN(dayNum) || dayNum < 1 || dayNum > daysInMonth) return;
+
+        // เก็บวันพิเศษ
+        if (log.leaveCheckbox === 'Yes') leaveDaySet.add(dayNum);
+        if (log.trainingCheckbox === 'Yes' || log.fieldworkCheckbox === 'Yes') fieldTrainDaySet.add(dayNum);
+
         if (!log.tasks) return;
         log.tasks.forEach(t => {
-            if (!t.topic || t.topic.trim() === '') return;
-            topicCount[t.topic] = (topicCount[t.topic] || 0) + 1;
-            if (!topicDatesMap[t.topic]) topicDatesMap[t.topic] = [];
-            if (log.date && !topicDatesMap[t.topic].includes(log.date)) topicDatesMap[t.topic].push(log.date);
+            const tp = (t.topic || '').trim();
+            if (!tp) return;
+            if (!topicDayDataMap[tp]) topicDayDataMap[tp] = {};
+            if (!topicDayDataMap[tp][dayNum]) {
+                topicDayDataMap[tp][dayNum] = { dateStr: log.date, color: null, statusLabel: '', tasks: [] };
+            }
+            topicDayDataMap[tp][dayNum].tasks.push(t);
         });
     });
-    window._topicDatesMap = topicDatesMap;
-    const sorted = Object.entries(topicCount).sort((a,b) => b[1]-a[1]);
-    if (sorted.length === 0) return `
-        <div style="margin-top:20px;background:white;border-radius:20px;border:1px solid #F1F5F9;padding:24px;box-shadow:0 2px 8px rgba(0,0,0,0.04);">
-            <div style="display:flex;align-items:center;gap:10px;margin-bottom:8px;">
-                <span style="width:32px;height:32px;background:linear-gradient(135deg,#2EAF72,#3AACCF);border-radius:10px;display:flex;align-items:center;justify-content:center;">
-                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2.2"><rect x="2" y="10" width="4" height="11"/><rect x="9" y="6" width="4" height="15"/><rect x="16" y="2" width="4" height="19"/></svg>
-                </span>
-                <span style="font-size:1rem;font-weight:800;color:#1E293B;">หัวข้องานที่ทำในเดือนนี้</span>
-            </div>
-            <p style="text-align:center;color:#94A3B8;font-size:0.85rem;padding:20px 0;">ยังไม่มีข้อมูลหัวข้องานในเดือนนี้</p>
-        </div>`;
-    const maxVal = sorted[0][1];
-    const palette = ['#E8A020','#3988D4','#4DA866','#89D9CB','#10B981','#8B5CF6','#EC4899','#06B6D4','#E05A5A','#F59E0B'];
+    // กำหนดสีต่อวัน (เลือก priority สูงสุด)
+    Object.keys(topicDayDataMap).forEach(tp => {
+        Object.keys(topicDayDataMap[tp]).forEach(d => {
+            const dd = topicDayDataMap[tp][d];
+            let bestColor = null, bestPri = 0, bestLabel = '';
+            dd.tasks.forEach(t => {
+                const c = _ganttStatusColor(t.status);
+                if (c) {
+                    const p = GANTT_COLOR_PRIORITY[c] || 0;
+                    if (p > bestPri) { bestPri = p; bestColor = c; bestLabel = t.status || ''; }
+                } else if (!bestColor) { bestLabel = t.status || ''; }
+            });
+            dd.color = bestColor;
+            dd.statusLabel = bestLabel || (dd.tasks[0]?.status || '');
+        });
+    });
 
-    // --- Bar list for all ranks (with medal blink for top 3) ---
-    const medalEmoji = ['🥇','🥈','🥉'];
-    const podiumSection = `<style>@keyframes medalPulse{0%,100%{transform:scale(1);}50%{transform:scale(1.35);}}</style>`;
-    const bars = sorted.map(([topic, count], i) => {
-        const pct = Math.round((count / maxVal) * 100);
-        const color = palette[i % palette.length];
-        const isFirst = i === 0;
-        const rankLabel = i < 3
-            ? `<span style="font-size:1.1rem;display:inline-block;${isFirst ? 'animation:medalPulse 1.6s ease-in-out infinite;' : ''}">${medalEmoji[i]}</span>`
-            : `<span style="font-size:0.8rem;font-weight:700;color:#94A3B8;">${i+1}.</span>`;
+    const topics = Object.keys(topicDayDataMap);
+    if (topics.length === 0) return `
+    <div style="margin-top:20px;background:white;border-radius:20px;border:1px solid #F1F5F9;padding:24px;box-shadow:0 2px 8px rgba(0,0,0,0.04);">
+        <div style="display:flex;align-items:center;gap:10px;margin-bottom:8px;">
+            <span style="width:32px;height:32px;background:linear-gradient(135deg,#4DA866,#3988D4);border-radius:10px;display:flex;align-items:center;justify-content:center;flex-shrink:0;">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2.2"><rect x="3" y="4" width="18" height="16" rx="2"/><line x1="3" y1="9" x2="21" y2="9"/><line x1="8" y1="4" x2="8" y2="9"/><line x1="16" y1="4" x2="16" y2="9"/></svg>
+            </span>
+            <span style="font-size:1rem;font-weight:800;color:#1E293B;">Gantt Chart สรุปการทำงาน</span>
+        </div>
+        <p style="text-align:center;color:#94A3B8;font-size:0.85rem;padding:20px 0;">ยังไม่มีข้อมูลหัวข้องานในเดือนนี้</p>
+    </div>`;
+
+    const palette = ['#4DA866','#3988D4','#E8A020','#8B5CF6','#EC4899','#10B981','#06B6D4','#E05A5A','#F59E0B','#64748B'];
+    const cellW = 26;
+    const rowH  = 36;
+    const labelW = 168;
+    const totalW = labelW + daysInMonth * cellW;
+
+    // วันหยุด/อาทิตย์
+    const weekendSet = new Set();
+    for (let d = 1; d <= daysInMonth; d++) {
+        const dt = new Date(y, m, d);
+        if (dt.getDay() === 0 || GLOBAL_HOLIDAYS[formatDate(dt)]) weekendSet.add(d);
+    }
+
+    // Header วัน
+    const dayHeaderCells = Array.from({length: daysInMonth}, (_, i) => {
+        const d = i + 1;
+        const isWk      = weekendSet.has(d);
+        const isLeave   = leaveDaySet.has(d);
+        const isFieldTr = fieldTrainDaySet.has(d);
+        const numColor  = isWk      ? '#FCA5A5'
+                        : isLeave   ? '#7DD3FA'
+                        : isFieldTr ? '#C084FC'
+                        : '#94A3B8';
+        return `<div style="width:${cellW}px;text-align:center;font-size:0.58rem;font-weight:700;color:${numColor};flex-shrink:0;padding:4px 0;">${d}</div>`;
+    }).join('');
+
+    // Grid lines
+    const gridLines = Array.from({length: daysInMonth + 1}, (_, i) =>
+        `<div style="position:absolute;left:${i * cellW}px;top:0;bottom:0;width:1px;background:#F1F5F9;pointer-events:none;"></div>`
+    ).join('');
+
+    // Weekend overlay
+    const wkOverlay = [...weekendSet].map(d =>
+        `<div style="position:absolute;left:${(d-1)*cellW}px;top:0;width:${cellW}px;bottom:0;background:rgba(239,68,68,0.05);pointer-events:none;"></div>`
+    ).join('');
+
+    // ลา overlay (ฟ้าพาสเทล) — วาดทับ weekend ได้
+    const leaveOverlay = [...leaveDaySet].map(d =>
+        `<div style="position:absolute;left:${(d-1)*cellW}px;top:0;width:${cellW}px;bottom:0;background:rgba(147,210,255,0.28);border-left:1px solid rgba(147,210,255,0.4);pointer-events:none;"></div>`
+    ).join('');
+
+    // อบรม/ลงพื้นที่ overlay (ม่วงพาสเทล)
+    const fieldTrainOverlay = [...fieldTrainDaySet].map(d =>
+        `<div style="position:absolute;left:${(d-1)*cellW}px;top:0;width:${cellW}px;bottom:0;background:rgba(192,132,252,0.22);border-left:2px solid rgba(192,132,252,0.5);pointer-events:none;"></div>`
+    ).join('');
+
+    // แต่ละ row
+    const rows = topics.map((topic, idx) => {
+        const topicColor = palette[idx % palette.length];
+        const dayData    = topicDayDataMap[topic];
+        const days       = Object.keys(dayData).map(Number).sort((a, b) => a - b);
+
+        // แถบพื้นหลัง (topic color, โปร่งแสง) จาก consecutive ranges
+        const ranges = [];
+        let rStart = days[0], rEnd = days[0];
+        for (let i = 1; i < days.length; i++) {
+            if (days[i] <= rEnd + 1) { rEnd = days[i]; }
+            else { ranges.push([rStart, rEnd]); rStart = rEnd = days[i]; }
+        }
+        ranges.push([rStart, rEnd]);
+
+        const bgBarEls = ranges.map(([s, e]) => {
+            const left  = (s - 1) * cellW + 1;
+            const width = (e - s + 1) * cellW - 2;
+            return `<div style="position:absolute;left:${left}px;top:12px;width:${width}px;height:12px;background:${topicColor}28;border-radius:6px;pointer-events:none;"></div>`;
+        }).join('');
+
+        // จุดสถานะต่อวัน (คลิกได้ → เปิดรายละเอียดวันนั้น)
+        const dotEls = days.map(d => {
+            const dd        = dayData[d];
+            const dotColor  = dd.color || topicColor;
+            const left      = (d - 1) * cellW + Math.round(cellW / 2) - 7;
+            const safeDate  = (dd.dateStr || '').replace(/\\/g,'').replace(/'/g,"\\'");
+            const tipLabel  = dd.statusLabel ? ` | ${dd.statusLabel}` : '';
+            return `<div
+                style="position:absolute;left:${left}px;top:9px;width:14px;height:14px;border-radius:50%;background:${dotColor};cursor:pointer;z-index:4;box-shadow:0 2px 8px ${dotColor}99;border:2.5px solid white;transition:transform 0.15s,box-shadow 0.15s;"
+                title="${topic} | วันที่ ${d}${tipLabel}"
+                onmouseenter="this.style.transform='scale(1.5)';this.style.boxShadow='0 4px 12px ${dotColor}cc';"
+                onmouseleave="this.style.transform='scale(1)';this.style.boxShadow='0 2px 8px ${dotColor}99';"
+                onclick="openSummaryDayDetail('${safeDate}')">
+            </div>`;
+        }).join('');
+
+        const rowBg = idx % 2 === 0 ? '#FAFAFA' : '#FFFFFF';
         return `
-        <div onclick="showTopicDates('${topic.replace(/'/g,"\\'")}','${color}')" style="display:flex;align-items:center;gap:10px;margin-bottom:10px;cursor:pointer;border-radius:14px;padding:6px 8px;transition:background 0.15s;" onmouseover="this.style.background='#F8FAFC'" onmouseout="this.style.background='transparent'">
-            <div style="width:28px;text-align:right;flex-shrink:0;display:flex;align-items:center;justify-content:flex-end;">${rankLabel}</div>
-            <div style="flex:1;min-width:0;">
-                <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:4px;">
-                    <span style="font-size:0.82rem;font-weight:600;color:#1E293B;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:70%;">${topic}</span>
-                    <span style="font-size:0.78rem;font-weight:800;color:${color};flex-shrink:0;">${count} ครั้ง</span>
-                </div>
-                <div style="background:#F1F5F9;border-radius:999px;height:10px;overflow:hidden;">
-                    <div style="height:100%;width:${pct}%;background:${color};border-radius:999px;transition:width 0.6s ease;"></div>
-                </div>
+        <div style="display:flex;align-items:center;border-bottom:1px solid #F8FAFC;background:${rowBg};">
+            <div style="width:${labelW}px;flex-shrink:0;padding:0 10px 0 14px;display:flex;align-items:center;gap:7px;overflow:hidden;">
+                <span style="width:9px;height:9px;border-radius:50%;background:${topicColor};flex-shrink:0;box-shadow:0 0 0 2px ${topicColor}33;"></span>
+                <span style="font-size:0.75rem;font-weight:600;color:#374151;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${topic}</span>
             </div>
-            <div style="flex-shrink:0;color:#CBD5E1;">
-                <svg width="14" height="14" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"/></svg>
+            <div style="position:relative;height:${rowH}px;flex:1;overflow:hidden;">
+                ${gridLines}${wkOverlay}${leaveOverlay}${fieldTrainOverlay}${bgBarEls}${dotEls}
             </div>
         </div>`;
     }).join('');
+
     return `
-    <div style="margin-top:20px;background:white;border-radius:20px;border:1px solid #F1F5F9;padding:24px;box-shadow:0 2px 8px rgba(0,0,0,0.04);">
-        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:20px;flex-wrap:wrap;gap:8px;">
-            <div style="display:flex;align-items:center;gap:10px;">
-                <span style="width:32px;height:32px;background:linear-gradient(135deg,#2EAF72,#3AACCF);border-radius:10px;display:flex;align-items:center;justify-content:center;">
-                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2.2"><rect x="2" y="10" width="4" height="11"/><rect x="9" y="6" width="4" height="15"/><rect x="16" y="2" width="4" height="19"/></svg>
-                </span>
-                <div>
-                    <div style="font-size:1rem;font-weight:800;color:#1E293B;">หัวข้องานที่ทำในเดือนนี้</div>
-                    <div style="font-size:0.72rem;color:#94A3B8;">เรียงจากมากไปน้อย · ${sorted.length} หัวข้อ · รวม ${sorted.reduce((a,b)=>a+b[1],0)} ครั้ง</div>
+    <div style="margin-top:20px;background:white;border-radius:20px;border:1px solid #F1F5F9;overflow:hidden;box-shadow:0 2px 8px rgba(0,0,0,0.04);">
+        <!-- Header card -->
+        <div style="padding:16px 24px 14px;border-bottom:1px solid #F1F5F9;position:sticky;top:0;z-index:10;background:white;border-radius:20px 20px 0 0;">
+            <!-- Row 1: Title + Month Nav -->
+            <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:10px;margin-bottom:12px;">
+                <div style="display:flex;align-items:center;gap:10px;">
+                    <span style="width:36px;height:36px;background:linear-gradient(135deg,#4DA866,#3988D4);border-radius:12px;display:flex;align-items:center;justify-content:center;flex-shrink:0;box-shadow:0 4px 12px rgba(77,168,102,0.3);">
+                        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2.2"><rect x="3" y="4" width="18" height="16" rx="2"/><line x1="3" y1="9" x2="21" y2="9"/><line x1="8" y1="4" x2="8" y2="9"/><line x1="16" y1="4" x2="16" y2="9"/></svg>
+                    </span>
+                    <div>
+                        <div style="font-size:1rem;font-weight:800;color:#1E293B;">Gantt Chart สรุปการทำงาน</div>
+                        <div style="font-size:0.72rem;color:#94A3B8;">${topics.length} หัวข้อ · คลิกจุดสีเพื่อดูรายละเอียด</div>
+                    </div>
+                </div>
+                <!-- Month navigation (สไตล์เดียวกับส่วนบน) -->
+                <div style="display:flex;align-items:center;gap:4px;padding:4px 0;">
+                    <button onclick="(function(){ const prev = new Date(currentCalendarDate.getFullYear(), currentCalendarDate.getMonth()-1, 1); if(prev < MIN_CALENDAR_DATE) return; currentCalendarDate.setMonth(currentCalendarDate.getMonth()-1); renderUserSummary(); })()"
+                        style="color:#9CA3AF;background:none;border:none;cursor:pointer;font-size:1rem;font-weight:700;padding:2px 6px;transition:color 0.2s;font-family:inherit;line-height:1;"
+                        onmouseover="this.style.color='#4DA866'" onmouseout="this.style.color='#9CA3AF'">←</button>
+                    <span style="font-size:0.82rem;font-weight:700;color:#374151;min-width:108px;text-align:center;">${monthNames[m]} ${y}</span>
+                    <button onclick="(function(){ currentCalendarDate.setMonth(currentCalendarDate.getMonth()+1); renderUserSummary(); })()"
+                        style="color:#9CA3AF;background:none;border:none;cursor:pointer;font-size:1rem;font-weight:700;padding:2px 6px;transition:color 0.2s;font-family:inherit;line-height:1;"
+                        onmouseover="this.style.color='#4DA866'" onmouseout="this.style.color='#9CA3AF'">→</button>
                 </div>
             </div>
+            <!-- Row 2: Legend สถานะ -->
+            <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;">
+                <span style="display:flex;align-items:center;gap:5px;font-size:0.68rem;color:#374151;font-weight:600;">
+                    <span style="width:12px;height:12px;border-radius:50%;background:#4DA866;display:inline-block;box-shadow:0 1px 4px #4DA86666;"></span>สำเร็จ</span>
+                <span style="display:flex;align-items:center;gap:5px;font-size:0.68rem;color:#374151;font-weight:600;">
+                    <span style="width:12px;height:12px;border-radius:50%;background:#F59E0B;display:inline-block;box-shadow:0 1px 4px #F59E0B66;"></span>ระหว่างดำเนินการ</span>
+                <span style="display:flex;align-items:center;gap:5px;font-size:0.68rem;color:#374151;font-weight:600;">
+                    <span style="width:12px;height:12px;border-radius:50%;background:#C084FC;display:inline-block;box-shadow:0 1px 4px #C084FC66;"></span>อยู่ระหว่างแก้ไข</span>
+                <span style="display:flex;align-items:center;gap:5px;font-size:0.68rem;color:#374151;font-weight:600;">
+                    <span style="width:12px;height:12px;border-radius:50%;background:#51B0DE;display:inline-block;box-shadow:0 1px 4px #51B0DE66;"></span>ส่งต่อผู้เชี่ยวชาญ</span>
+                <span style="display:flex;align-items:center;gap:5px;font-size:0.68rem;color:#FCA5A5;font-weight:600;">
+                    <span style="width:10px;height:10px;background:rgba(239,68,68,0.08);border:1px solid #FEE2E2;border-radius:2px;display:inline-block;"></span>วันหยุด</span>
+                <span style="display:flex;align-items:center;gap:5px;font-size:0.68rem;color:#374151;font-weight:600;">
+                    <span style="width:10px;height:10px;background:rgba(147,210,255,0.5);border:1px solid rgba(147,210,255,0.8);border-radius:2px;display:inline-block;"></span>วันลา</span>
+                <span style="display:flex;align-items:center;gap:5px;font-size:0.68rem;color:#374151;font-weight:600;">
+                    <span style="width:10px;height:10px;background:rgba(192,132,252,0.4);border:1px solid rgba(192,132,252,0.7);border-radius:2px;display:inline-block;"></span>อบรม/ลงพื้นที่</span>
+            </div>
         </div>
-        ${podiumSection}
-        ${bars}
+        <!-- หัวตาราง: แยกออกมาจาก scroll body เพื่อให้ sticky ทำงานได้จริง -->
+        <div style="overflow:hidden;position:sticky;top:0;z-index:9;background:#F8FAFC;">
+            <div id="gantt-header-inner" style="min-width:${totalW}px;display:flex;align-items:center;background:#F8FAFC;border-bottom:2px solid #E2E8F0;">
+                <div style="width:${labelW}px;flex-shrink:0;padding:0 10px 0 14px;font-size:0.68rem;font-weight:700;color:#64748B;letter-spacing:0.04em;">หัวข้องาน</div>
+                <div style="display:flex;flex-shrink:0;">${dayHeaderCells}</div>
+            </div>
+        </div>
+        <!-- Gantt body: scroll X+Y อิสระ, sync header ด้วย JS -->
+        <div id="gantt-body-scroll" style="overflow-x:auto;overflow-y:auto;max-height:${12 * rowH}px;" class="custom-scroll"
+            onscroll="(function(el){ var h=document.getElementById('gantt-header-inner'); if(h) h.style.transform='translateX(-'+el.scrollLeft+'px)'; })(this)">
+            <div style="min-width:${totalW}px;">
+                ${rows}
+            </div>
+        </div>
     </div>`;
 })()}
 
 `;
-        }
-
-        function showTopicDates(topic, color) {
-            const map = window._topicDatesMap || {};
-            // parse DD/MM/YYYY correctly
-            const parseDate = (d) => {
-                const p = d.split('/');
-                if (p.length === 3) return new Date(parseInt(p[2]), parseInt(p[1])-1, parseInt(p[0]));
-                return new Date(d);
-            };
-            const dates = (map[topic] || []).slice().sort((a, b) => parseDate(b) - parseDate(a));
-            document.getElementById('topicDatesModal-title').textContent = topic;
-            document.getElementById('topicDatesModal-count').textContent = `บันทึกทั้งหมด ${dates.length} วัน`;
-            // เปลี่ยนสี header ให้ตรงกับสีแท่งกราฟ
-            document.getElementById('topicDatesModal-header').style.background = color;
-            const body = document.getElementById('topicDatesModal-body');
-            if (dates.length === 0) {
-                body.innerHTML = `<p style="text-align:center;color:#94A3B8;padding:24px 0;">ไม่พบข้อมูลวันที่</p>`;
-            } else {
-                const thaiMonths = ['ม.ค.','ก.พ.','มี.ค.','เม.ย.','พ.ค.','มิ.ย.','ก.ค.','ส.ค.','ก.ย.','ต.ค.','พ.ย.','ธ.ค.'];
-                const thaiDays = ['อา.','จ.','อ.','พ.','พฤ.','ศ.','ส.'];
-                body.innerHTML = dates.map((d, i) => {
-                    const dt = parseDate(d);
-                    const dayName = thaiDays[dt.getDay()];
-                    const dateNum = dt.getDate();
-                    const month = thaiMonths[dt.getMonth()];
-                    const year = dt.getFullYear() + 543;
-                    return `<div onclick="hideModal('topicDatesModal'); openSummaryDayDetail('${d}')" style="display:flex;align-items:center;gap:12px;padding:10px 14px;border-radius:14px;margin-bottom:8px;cursor:pointer;border:1px solid #F1F5F9;transition:all 0.15s;background:white;" onmouseover="this.style.background='#F8FAFC';this.style.borderColor='${color}'" onmouseout="this.style.background='white';this.style.borderColor='#F1F5F9'">
-                        <div style="width:40px;height:40px;border-radius:12px;background:${color}22;display:flex;flex-direction:column;align-items:center;justify-content:center;flex-shrink:0;">
-                            <span style="font-size:0.58rem;font-weight:700;color:${color};line-height:1;">${dayName}</span>
-                            <span style="font-size:1.05rem;font-weight:800;color:${color};line-height:1.1;">${dateNum}</span>
-                        </div>
-                        <div>
-                            <div style="font-size:0.85rem;font-weight:700;color:#1E293B;">${dateNum} ${month} ${year}</div>
-                            <div style="font-size:0.72rem;color:#94A3B8;">แตะเพื่อดูรายละเอียด</div>
-                        </div>
-                        <div style="margin-left:auto;color:#CBD5E1;"><svg width="14" height="14" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"/></svg></div>
-                    </div>`;
-                }).join('');
-            }
-            showModal('topicDatesModal');
         }
 
         function openSummaryDayDetail(dateStr) {
