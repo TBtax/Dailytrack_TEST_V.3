@@ -1434,7 +1434,7 @@ button[onclick="saveDraft()"] { border-color: var(--border) !important; color: v
                     <div class="w-10 h-10 rounded-xl bg-white flex items-center justify-center text-primary font-bold text-lg flex-shrink-0 shadow-sm overflow-hidden" id="profile-initial">?</div>
                     <div class="flex-1 min-w-0 sidebar-text">
                         <p class="text-sm font-bold text-gray-700 truncate" id="sidebar-username">--</p>
-                        <p style="font-family:'Sarabun',sans-serif;font-size:0.68rem;color:#94A3B8;letter-spacing:0.08em;margin-top:2px;font-weight:600;">Last update : 070526 · v3.0</p>
+                        <p style="font-family:'Sarabun',sans-serif;font-size:0.68rem;color:#94A3B8;letter-spacing:0.08em;margin-top:2px;font-weight:600;">Last update : 180526 · v3.0</p>
                     </div>
                 </div>
             </div>
@@ -1514,7 +1514,7 @@ button[onclick="saveDraft()"] { border-color: var(--border) !important; color: v
                             <div style="font-size:0.75rem;font-weight:700;color:#3A8A52;text-align:center;">#</div>
                             <div style="font-size:0.78rem;font-weight:700;color:#3A8A52;">ผู้แจ้งงาน</div>
                             <div style="font-size:0.78rem;font-weight:700;color:#3A8A52;">Agent</div>
-                            <div style="font-size:0.78rem;font-weight:700;color:#3A8A52;">หัวข้อ(พิมพ์เพื่อค้นหาได้)</div>
+                            <div style="font-size:0.78rem;font-weight:700;color:#3A8A52;">หัวข้อ</div>
                             <div style="font-size:0.78rem;font-weight:700;color:#3A8A52;">สถานะ</div>
                             <div style="font-size:0.78rem;font-weight:700;color:#3A8A52;">ที่ปรึกษา</div>
                             <div style="font-size:0.78rem;font-weight:700;color:#3A8A52;text-align:center;">เวลา (ชม. / น.)</div>
@@ -3522,7 +3522,7 @@ button[onclick="saveDraft()"] { border-color: var(--border) !important; color: v
                 // Init searchable selects
                 initSS(`requester-select-table-${rowNum}`, { placeholder: 'เลือกผู้แจ้งงาน' });
                 initSS(`agent-select-table-${rowNum}`, { placeholder: 'เลือกเอเย่นต์' });
-                initSS(`topic-select-table-${rowNum}`, { placeholder: 'เลือกหัวข้องาน' });
+                initSS(`topic-select-table-${rowNum}`, { placeholder: 'เลือก/พิมพ์เพื่อค้นหา' });
                 initSS(`status-select-table-${rowNum}`, { placeholder: 'เลือกสถานะ' });
                 // duration/minute selects kept as native <select> for reliable value display
                 // Watch all inputs in this card to toggle is-empty class
