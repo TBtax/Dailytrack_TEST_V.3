@@ -1514,7 +1514,7 @@ button[onclick="saveDraft()"] { border-color: var(--border) !important; color: v
                             <div style="font-size:0.75rem;font-weight:700;color:#3A8A52;text-align:center;">#</div>
                             <div style="font-size:0.78rem;font-weight:700;color:#3A8A52;">ผู้แจ้งงาน</div>
                             <div style="font-size:0.78rem;font-weight:700;color:#3A8A52;">Agent</div>
-                            <div style="font-size:0.78rem;font-weight:700;color:#3A8A52;">หัวข้อ</div>
+                            <div style="font-size:0.78rem;font-weight:700;color:#3A8A52;">หัวข้อ(พิมพ์เพื่อค้นหาได้)</div>
                             <div style="font-size:0.78rem;font-weight:700;color:#3A8A52;">สถานะ</div>
                             <div style="font-size:0.78rem;font-weight:700;color:#3A8A52;">ที่ปรึกษา</div>
                             <div style="font-size:0.78rem;font-weight:700;color:#3A8A52;text-align:center;">เวลา (ชม. / น.)</div>
@@ -4025,7 +4025,7 @@ button[onclick="saveDraft()"] { border-color: var(--border) !important; color: v
                                 <div class="text-gray-600 font-semibold text-xs">⏱️ ${timeStr}</div>
                             </div>
                             <div class="text-xs mb-1 text-gray-400">Agent: <span class="font-semibold text-green-600">${t.agent||'-'}</span></div>
-                            <div class="text-xs mb-1 text-gray-400">หัวข้อ(พิมพ์เพื่อค้นหาได้): <span class="font-bold text-gray-800">${t.topic||'-'}</span></div>
+                            <div class="text-xs mb-1 text-gray-400">หัวข้อ: <span class="font-bold text-gray-800">${t.topic||'-'}</span></div>
                             <div class="text-xs mb-2 text-gray-400">สถานะ: <span class="font-bold ${statusClass}">${t.status||'-'}</span></div>
                             <div class="text-xs mb-1"><span class="font-semibold text-gray-500">รายละเอียด:</span><div class="bg-white rounded-xl px-3 py-2 mt-1 whitespace-pre-wrap text-gray-800 border border-gray-100 shadow-sm text-xs">${t.detail||'-'}</div></div>
                             ${t.problem ? `<div class="text-xs mt-2"><span class="font-semibold text-red-500">⚠️ ปัญหา:</span><div class="bg-red-50 rounded-xl px-3 py-2 mt-1 whitespace-pre-wrap text-red-700 border border-red-100 shadow-sm text-xs">${t.problem}</div></div>` : ''}
