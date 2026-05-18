@@ -3507,11 +3507,11 @@ button[onclick="saveDraft()"] { border-color: var(--border) !important; color: v
                     <div class="log-card-bottom">
                         <div class="log-card-field">
                             <label style="color:#6B7280;">📝 รายละเอียด</label>
-                            <textarea id="detail-text-${rowNum}" class="log-textarea" placeholder="อธิบายงานที่ทำ... / (กดEnterเพื่อขึ้นบรรทัดใหม่)"></textarea>
+                            <textarea id="detail-text-${rowNum}" class="log-textarea" placeholder="(สามารถกดEnterเพื่อขึ้นบรรทัดใหม่ได้)"></textarea>
                         </div>
                         <div class="log-card-field">
                             <label style="color:#DC2626;">⚠️ ปัญหา / อุปสรรค</label>
-                            <textarea id="problem-text-${rowNum}" class="log-textarea" placeholder="ระบุปัญหาที่พบ (ถ้ามี)... / (กดEnterเพื่อขึ้นบรรทัดใหม่)"></textarea>
+                            <textarea id="problem-text-${rowNum}" class="log-textarea" placeholder="(สามารถกดEnterเพื่อขึ้นบรรทัดใหม่ได้)"></textarea>
                         </div>
                     </div>`;
 
@@ -4025,7 +4025,7 @@ button[onclick="saveDraft()"] { border-color: var(--border) !important; color: v
                                 <div class="text-gray-600 font-semibold text-xs">⏱️ ${timeStr}</div>
                             </div>
                             <div class="text-xs mb-1 text-gray-400">Agent: <span class="font-semibold text-green-600">${t.agent||'-'}</span></div>
-                            <div class="text-xs mb-1 text-gray-400">หัวข้อ: <span class="font-bold text-gray-800">${t.topic||'-'}</span></div>
+                            <div class="text-xs mb-1 text-gray-400">หัวข้อ(พิมพ์เพื่อค้นหาได้): <span class="font-bold text-gray-800">${t.topic||'-'}</span></div>
                             <div class="text-xs mb-2 text-gray-400">สถานะ: <span class="font-bold ${statusClass}">${t.status||'-'}</span></div>
                             <div class="text-xs mb-1"><span class="font-semibold text-gray-500">รายละเอียด:</span><div class="bg-white rounded-xl px-3 py-2 mt-1 whitespace-pre-wrap text-gray-800 border border-gray-100 shadow-sm text-xs">${t.detail||'-'}</div></div>
                             ${t.problem ? `<div class="text-xs mt-2"><span class="font-semibold text-red-500">⚠️ ปัญหา:</span><div class="bg-red-50 rounded-xl px-3 py-2 mt-1 whitespace-pre-wrap text-red-700 border border-red-100 shadow-sm text-xs">${t.problem}</div></div>` : ''}
